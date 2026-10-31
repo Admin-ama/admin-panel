@@ -83,6 +83,11 @@ export function CommandMenu({ open, onOpenChange }: t.CommandMenuProps) {
             onSelect={() => navigateTo('/access')}
           />
           <CommandItem
+            icon="chart-area"
+            label={localize('com_nav_usage')}
+            onSelect={() => navigateTo('/usage')}
+          />
+          <CommandItem
             icon="lock"
             label={localize('com_nav_grants')}
             onSelect={() => navigateTo('/grants')}
