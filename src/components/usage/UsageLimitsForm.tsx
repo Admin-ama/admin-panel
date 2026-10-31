@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Button, TextField } from '@clickhouse/click-ui';
+import { Button } from '@clickhouse/click-ui';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type * as t from '@/types';
 import {
@@ -8,9 +8,10 @@ import {
   notifySuccess,
   parseLimitInput,
   USAGE_WINDOW_KEYS,
-  USAGE_WINDOW_LABEL_KEYS,
+  deriveLimitsFromMonthly,
 } from '@/utils';
 import { saveUserUsageLimitsFn, userUsageLimitsQueryOptions } from '@/server';
+import { UsageLimitsInputs } from './UsageLimitsInputs';
 import { useLocalize } from '@/hooks';
 
 type EnabledChoice = 'inherit' | 'on' | 'off';
@@ -31,11 +32,19 @@ const fromChoice = (choice: EnabledChoice): boolean | null =>
 
 const toText = (value: number | null): string => (value == null ? '' : String(value));
 
+/** Auto mode fits when only the monthly cap is set or all windows follow the ratio rule. */
+const followsRatio = (stored: t.UsageLimitsOverride): boolean => {
+  if (stored.monthly == null) return stored.fiveHour == null && stored.weekly == null;
+  const derived = deriveLimitsFromMonthly(stored.monthly);
+  return stored.fiveHour === derived.fiveHour && stored.weekly === derived.weekly;
+};
+
 export function UsageLimitsForm({ userId, canEdit }: t.UsageLimitsFormProps) {
   const localize = useLocalize();
   const queryClient = useQueryClient();
   const { data: stored } = useQuery(userUsageLimitsQueryOptions(userId));
   const [choice, setChoice] = useState<EnabledChoice>('inherit');
+  const [auto, setAuto] = useState(true);
   const [amounts, setAmounts] = useState<Record<t.UsageWindowKey, string>>({
     fiveHour: '',
     weekly: '',
@@ -45,6 +54,7 @@ export function UsageLimitsForm({ userId, canEdit }: t.UsageLimitsFormProps) {
   useEffect(() => {
     if (!stored) return;
     setChoice(toChoice(stored.enabled));
+    setAuto(followsRatio(stored));
     setAmounts({
       fiveHour: toText(stored.fiveHour),
       weekly: toText(stored.weekly),
@@ -74,6 +84,7 @@ export function UsageLimitsForm({ userId, canEdit }: t.UsageLimitsFormProps) {
       queryClient.invalidateQueries({ queryKey: ['usageLimits', userId] });
       queryClient.invalidateQueries({ queryKey: ['usage'] });
       queryClient.invalidateQueries({ queryKey: ['availableScopes'] });
+      queryClient.invalidateQueries({ queryKey: ['usageExceptions'] });
       notifySuccess(localize('com_usage_limits_saved'));
     },
     onError: (err: Error) => notifyError(err.message),
@@ -108,19 +119,14 @@ export function UsageLimitsForm({ userId, canEdit }: t.UsageLimitsFormProps) {
         ))}
       </div>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        {USAGE_WINDOW_KEYS.map((key) => (
-          <TextField
-            key={key}
-            label={`${localize(USAGE_WINDOW_LABEL_KEYS[key])} (USD)`}
-            placeholder={localize('com_usage_inherit')}
-            value={amounts[key]}
-            disabled={!canEdit || choice === 'off'}
-            onChange={(value: string) => setAmounts((prev) => ({ ...prev, [key]: value }))}
-            error={parsed[key] === undefined ? localize('com_usage_invalid_amount') : undefined}
-          />
-        ))}
-      </div>
+      <UsageLimitsInputs
+        values={amounts}
+        onChange={setAmounts}
+        auto={auto}
+        onAutoChange={setAuto}
+        disabled={!canEdit || choice === 'off'}
+        placeholder={localize('com_usage_inherit')}
+      />
 
       <div className="flex justify-end">
         <Button

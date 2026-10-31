@@ -1,7 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import type * as t from '@/types';
+import type { AdminConfig } from '@librechat/data-schemas';
 import {
   usagePercent,
+  formatLimits,
+  collectUsageExceptions,
+  deriveLimitsFromMonthly,
   isUserBlocked,
   parseLimitInput,
   filterAndSortUsage,
@@ -89,5 +93,49 @@ describe('parseLimitInput', () => {
     expect(parseLimitInput('10')).toBe(10);
     expect(parseLimitInput('-1')).toBeUndefined();
     expect(parseLimitInput('abc')).toBeUndefined();
+  });
+});
+
+describe('deriveLimitsFromMonthly', () => {
+  it('keeps the 2 / 5 / 10 proportion for any monthly cap', () => {
+    expect(deriveLimitsFromMonthly(10)).toEqual({ fiveHour: 2, weekly: 5, monthly: 10 });
+    expect(deriveLimitsFromMonthly(20)).toEqual({ fiveHour: 4, weekly: 10, monthly: 20 });
+    expect(deriveLimitsFromMonthly(35)).toEqual({ fiveHour: 7, weekly: 17.5, monthly: 35 });
+    expect(deriveLimitsFromMonthly(12.34)).toEqual({ fiveHour: 2.47, weekly: 6.17, monthly: 12.34 });
+  });
+});
+
+describe('formatLimits', () => {
+  it('renders the three windows in order with a dash for inherited ones', () => {
+    expect(formatLimits({ fiveHour: 2, weekly: null, monthly: 10 })).toMatch(/2\.00.*—.*10\.00/);
+  });
+});
+
+describe('collectUsageExceptions', () => {
+  const config = (
+    principalType: string,
+    principalId: string,
+    overrides: Record<string, unknown>,
+    isActive = true,
+  ) => ({ principalType, principalId, overrides, isActive }) as unknown as AdminConfig;
+
+  it('splits user and role/group overrides and ignores base, inactive and empty ones', () => {
+    const result = collectUsageExceptions([
+      config('user', 'u1', { usageLimits: { monthly: 30 } }),
+      config('user', 'u2', { usageLimits: {} }),
+      config('user', 'u3', { usageLimits: { monthly: 5 } }, false),
+      config('user', 'u4', { interface: {} }),
+      config('role', 'ADMIN', { usageLimits: { enabled: false } }),
+      config('role', '__base__', { usageLimits: { monthly: 20 } }),
+    ]);
+    expect(Object.keys(result.users)).toEqual(['u1']);
+    expect(result.users.u1.monthly).toBe(30);
+    expect(result.scopes).toEqual([
+      {
+        principalType: 'role',
+        principalId: 'ADMIN',
+        limits: { enabled: false, fiveHour: null, weekly: null, monthly: null },
+      },
+    ]);
   });
 });

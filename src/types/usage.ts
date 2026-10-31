@@ -76,8 +76,44 @@ export interface UsageLimitsFormProps {
   canEdit: boolean;
 }
 
+export interface UsageLimitsInputsProps {
+  values: Record<UsageWindowKey, string>;
+  onChange: (values: Record<UsageWindowKey, string>) => void;
+  auto: boolean;
+  onAutoChange: (auto: boolean) => void;
+  disabled?: boolean;
+  placeholder?: string;
+}
+
 export interface UsageSummaryCardProps {
   label: string;
   value: string;
   danger?: boolean;
+}
+
+/** Effective caps for every window (USD); `null` = uncapped. */
+export type UsageLimits = Record<UsageWindowKey, number | null>;
+
+export interface GlobalUsageLimits extends UsageLimits {
+  enabled: boolean;
+}
+
+/** A role/group/user config doc that overrides `usageLimits`. */
+export interface UsageException {
+  principalType: string;
+  principalId: string;
+  limits: UsageLimitsOverride;
+}
+
+export interface UsageExceptions {
+  /** User id → that user's own override */
+  users: Record<string, UsageLimitsOverride>;
+  /** Role and group level overrides */
+  scopes: UsageException[];
+}
+
+export interface GlobalLimitsCardProps {
+  users: UsageUser[];
+  exceptions: UsageExceptions;
+  canEdit: boolean;
 }

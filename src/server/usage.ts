@@ -10,9 +10,16 @@ import { queryOptions } from '@tanstack/react-query';
 import { createServerFn } from '@tanstack/react-start';
 import { PrincipalType } from 'librechat-data-provider';
 import { SystemCapabilities } from '@librechat/data-schemas/capabilities';
-import type { AdminConfigResponse } from '@librechat/data-schemas';
+import type { AdminConfigListResponse, AdminConfigResponse } from '@librechat/data-schemas';
 import type * as t from '@/types';
-import { USAGE_LIMIT_FIELDS, toUsageLimitsOverride } from '@/utils/usage';
+import {
+  BASE_PRINCIPAL_ID,
+  USAGE_LIMIT_FIELDS,
+  USAGE_WINDOW_KEYS,
+  toGlobalUsageLimits,
+  toUsageLimitsOverride,
+  collectUsageExceptions,
+} from '@/utils/usage';
 import { requireAnyCapability } from './capabilities';
 import { apiFetch, extractApiError } from './utils/api';
 
@@ -124,3 +131,64 @@ export const saveUserUsageLimitsFn = createServerFn({ method: 'POST' })
     }
     return { success: true };
   });
+
+export const getGlobalUsageLimitsFn = createServerFn({ method: 'GET' }).handler(
+  async (): Promise<t.GlobalUsageLimits> => {
+    const response = await apiFetch('/api/admin/config/base');
+    if (!response.ok) {
+      await extractApiError(response, 'Failed to fetch global limits');
+    }
+    const { config } = (await response.json()) as {
+      config: { usageLimits?: Partial<t.UsageLimitsOverride> };
+    };
+    return toGlobalUsageLimits(config?.usageLimits);
+  },
+);
+
+export const globalUsageLimitsQueryOptions = queryOptions({
+  queryKey: ['usageGlobal'],
+  queryFn: () => getGlobalUsageLimitsFn(),
+  staleTime: 30_000,
+});
+
+/** Writes tenant-wide caps as base config overrides; they take precedence over librechat.yaml. */
+export const saveGlobalUsageLimitsFn = createServerFn({ method: 'POST' })
+  .inputValidator(
+    z.object({
+      fiveHour: z.number().nonnegative(),
+      weekly: z.number().nonnegative(),
+      monthly: z.number().nonnegative(),
+    }),
+  )
+  .handler(async ({ data }): Promise<{ success: true }> => {
+    await requireAnyCapability([SystemCapabilities.MANAGE_CONFIGS]);
+    const entries = [
+      { fieldPath: 'usageLimits.enabled', value: true },
+      ...USAGE_WINDOW_KEYS.map((key) => ({ fieldPath: `usageLimits.${key}`, value: data[key] })),
+    ];
+    const response = await apiFetch(
+      `/api/admin/config/${PrincipalType.ROLE}/${BASE_PRINCIPAL_ID}/fields`,
+      { method: 'PATCH', body: JSON.stringify({ entries, priority: 0 }) },
+    );
+    if (!response.ok) {
+      await extractApiError(response, 'Failed to save global limits');
+    }
+    return { success: true };
+  });
+
+export const getUsageExceptionsFn = createServerFn({ method: 'GET' }).handler(
+  async (): Promise<t.UsageExceptions> => {
+    const response = await apiFetch('/api/admin/config');
+    if (!response.ok) {
+      await extractApiError(response, 'Failed to fetch limit exceptions');
+    }
+    const { configs } = (await response.json()) as AdminConfigListResponse;
+    return collectUsageExceptions(configs ?? []);
+  },
+);
+
+export const usageExceptionsQueryOptions = queryOptions({
+  queryKey: ['usageExceptions'],
+  queryFn: () => getUsageExceptionsFn(),
+  staleTime: 30_000,
+});

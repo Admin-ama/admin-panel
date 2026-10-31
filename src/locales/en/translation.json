@@ -1282,5 +1282,18 @@
   "com_usage_limits_mode": "Limit enforcement",
   "com_usage_limits_saved": "Limits saved",
   "com_usage_invalid_amount": "Enter a positive amount",
-  "com_usage_load_error": "Could not load usage: {{message}}"
+  "com_usage_load_error": "Could not load usage: {{message}}",
+  "com_usage_global_title": "Global limits (all users)",
+  "com_usage_global_current": "Current: {{limits}} (5 hours / week / month)",
+  "com_usage_global_scope": "Applies to {{affected}} users · {{custom}} with a custom limit and {{unlimited}} unlimited are not changed",
+  "com_usage_global_saved": "Global limits saved",
+  "com_usage_global_confirm_title": "Change global limits?",
+  "com_usage_global_confirm_desc": "Limits go from {{from}} to {{to}} for {{affected}} users. {{custom}} users with a custom limit keep theirs.",
+  "com_usage_quick_raise": "Quick raise",
+  "com_usage_auto_ratio": "Derive 5-hour and weekly limits from the monthly limit",
+  "com_usage_auto_ratio_desc": "Automatic: 5 hours = {{fiveHour}}% and week = {{weekly}}% of the monthly limit",
+  "com_usage_auto_preview": "5 hours: {{fiveHour}} · week: {{weekly}}",
+  "com_usage_custom_limit": "Custom limit",
+  "com_usage_only_custom": "Custom limits ({{count}})",
+  "com_usage_scope_exceptions": "Role/group exceptions"
 }

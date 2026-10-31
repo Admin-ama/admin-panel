@@ -8,10 +8,18 @@ import {
   ScreenReaderAnnouncer,
   SearchInput,
 } from '@/components/shared';
-import { cn, filterAndSortUsage, formatUsd, getWindow, isUserBlocked } from '@/utils';
+import {
+  cn,
+  formatUsd,
+  getWindow,
+  formatLimits,
+  isUserBlocked,
+  filterAndSortUsage,
+} from '@/utils';
 import { useAnnouncement, useCapabilities, useLocalize } from '@/hooks';
 import { UsageDetailDialog } from './UsageDetailDialog';
-import { usageListQueryOptions } from '@/server';
+import { usageExceptionsQueryOptions, usageListQueryOptions } from '@/server';
+import { GlobalLimitsCard } from './GlobalLimitsCard';
 import { SystemCapabilities } from '@/constants';
 import { UsageBar } from './UsageBar';
 
@@ -24,20 +32,35 @@ const SORT_LABEL_KEYS: Record<t.UsageSort, string> = {
 
 const WINDOW_COLUMNS: t.UsageWindowKey[] = ['fiveHour', 'weekly', 'monthly'];
 
+const EMPTY_EXCEPTIONS: t.UsageExceptions = { users: {}, scopes: [] };
+
+/** Human summary of an override: "Unlimited" or the caps it sets ("—" = inherited). */
+function describeOverride(
+  limits: t.UsageLimitsOverride,
+  localize: (key: string) => string,
+): string {
+  if (limits.enabled === false) return localize('com_usage_unlimited');
+  return formatLimits(limits);
+}
+
 export function UsagePage() {
   const localize = useLocalize();
   const { hasCapability } = useCapabilities();
-  const canEditLimits =
-    hasCapability(SystemCapabilities.ASSIGN_CONFIGS) ||
-    hasCapability(SystemCapabilities.MANAGE_CONFIGS);
+  const canManageConfigs = hasCapability(SystemCapabilities.MANAGE_CONFIGS);
+  const canEditLimits = hasCapability(SystemCapabilities.ASSIGN_CONFIGS) || canManageConfigs;
+  const [onlyCustom, setOnlyCustom] = useState(false);
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<t.UsageSort>('monthly');
   const [detailId, setDetailId] = useState<string | null>(null);
   const { message: announcement, announce } = useAnnouncement();
   const { data, isLoading, isError, error } = useQuery(usageListQueryOptions);
+  const { data: exceptions = EMPTY_EXCEPTIONS } = useQuery(usageExceptionsQueryOptions);
 
   const users = useMemo(() => data?.users ?? [], [data]);
-  const visible = useMemo(() => filterAndSortUsage(users, search, sort), [users, search, sort]);
+  const visible = useMemo(() => {
+    const sorted = filterAndSortUsage(users, search, sort);
+    return onlyCustom ? sorted.filter((u) => exceptions.users[u.id] != null) : sorted;
+  }, [users, search, sort, onlyCustom, exceptions]);
   const totals = useMemo(
     () =>
       users.reduce(
@@ -87,6 +110,25 @@ export function UsagePage() {
         />
       </section>
 
+      <GlobalLimitsCard users={users} exceptions={exceptions} canEdit={canManageConfigs} />
+
+      {exceptions.scopes.length > 0 && (
+        <section
+          aria-label={localize('com_usage_scope_exceptions')}
+          className="flex flex-wrap items-center gap-2 text-xs text-(--cui-color-text-muted)"
+        >
+          <span>{localize('com_usage_scope_exceptions')}:</span>
+          {exceptions.scopes.map((scope) => (
+            <span
+              key={`${scope.principalType}:${scope.principalId}`}
+              className="badge-role inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-medium"
+            >
+              {scope.principalType} {scope.principalId} · {describeOverride(scope.limits, localize)}
+            </span>
+          ))}
+        </section>
+      )}
+
       <section aria-label={localize('com_usage_list')}>
         <div className="mb-3 flex flex-wrap items-center gap-3">
           <SearchInput
@@ -113,6 +155,21 @@ export function UsagePage() {
               </button>
             ))}
           </div>
+          <button
+            type="button"
+            aria-pressed={onlyCustom}
+            onClick={() => setOnlyCustom((v) => !v)}
+            className={cn(
+              'rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
+              onlyCustom
+                ? 'bg-amber-500/20 text-amber-700 dark:text-amber-300'
+                : 'text-(--cui-color-text-muted) hover:bg-(--cui-color-background-hover) hover:text-(--cui-color-text-default)',
+            )}
+          >
+            {localize('com_usage_only_custom', {
+              count: Object.keys(exceptions.users).length,
+            })}
+          </button>
         </div>
 
         <div className="overflow-x-auto rounded-lg border border-(--cui-color-stroke-default)">
@@ -157,6 +214,15 @@ export function UsagePage() {
                           >
                             <Icon name="lock" size="xs" />
                             {localize('com_usage_blocked')}
+                          </span>
+                        )}
+                        {exceptions.users[user.id] && (
+                          <span
+                            className="inline-flex items-center gap-1 rounded-full bg-amber-500/20 px-2 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-300"
+                            title={describeOverride(exceptions.users[user.id], localize)}
+                          >
+                            <Icon name="pencil" size="xs" />
+                            {localize('com_usage_custom_limit')}
                           </span>
                         )}
                         {!user.enabled && (
